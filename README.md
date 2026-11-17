@@ -1,6 +1,10 @@
 
 ## ESP-Drone
 
+**Local Kubit setup:** see [Kubit ESP32 setup](docs/kubit-esp32.md) for the
+ESP32-D0WD-V3 / 38-pin WROOM-32 DevKit diagnostic configuration and build steps.
+Board outputs remain disabled pending hardware integration.
+
 * [中文](./README_cn.md)
 
 [![Build project](https://github.com/espressif/esp-drone/actions/workflows/build_project.yml/badge.svg)](https://github.com/espressif/esp-drone/actions/workflows/build_project.yml)
