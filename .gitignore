@@ -5,6 +5,9 @@ sdkconfig.hw123-candidate
 sdkconfig.hw123-candidate.old
 sdkconfig.imu-bench
 sdkconfig.imu-bench.old
+build-kubit-motor-bench/
+sdkconfig.kubit-motor-bench
+sdkconfig.kubit-motor-bench.old
 sdkconfig
 sdkconfig.old
 esp_idf

@@ -1,0 +1,51 @@
+# Kubit four-motor bench profile (propellers OFF). Not a flight configuration.
+# Append after sdkconfig.defaults;sdkconfig.defaults.esp32 in a fresh, separate
+# build directory. See docs/kubit-motor-bench.md.
+#
+# Uses the classic-ESP32 ESP-Drone flight path (ESPLANE_V1 sensor axes match the
+# HW-123 attitude bench) with Kubit wiring overrides. Motor pins avoid strapping
+# pins (0, 2, 5, 12, 15), input-only pins (34-39) and the IMU pins 21/22/23.
+# None of these four pins has run motor hardware yet. Each gate needs its own
+# 150 ohm series resistor and 10 kohm gate-source pull-down.
+CONFIG_IDF_TARGET="esp32"
+CONFIG_TARGET_PORTABLE_SAFE=n
+CONFIG_TARGET_ESPLANE_V1=y
+
+# HW-123 MPU-6050: SDA21, SCL22, INT23 (user-selected 7 Nov).
+CONFIG_I2C0_PIN_SDA=21
+CONFIG_I2C0_PIN_SCL=22
+CONFIG_MPU_PIN_INT=23
+
+# Motors M1..M4 (ESP-Drone X order: M1 front-right, M2 rear-right, M3 rear-left,
+# M4 front-left). Board face up, USB FORWARD, antenna at the rear (user, 13 Nov).
+# Two pins per header, one toward each end, for short motor leads:
+#   right header (drone left):  GPIO19 (rear-left M3), GPIO4 (front-left M4)
+#   left header (drone right):  GPIO13 (front-right M1), GPIO32 (rear-right M2)
+# Spin by pin: 13 and 19 CCW (white/black), 32 and 4 CW (red/blue).
+# GPIO25 (earlier bench channel) is no longer a motor pin in this profile.
+CONFIG_MOTOR01_PIN=13
+CONFIG_MOTOR02_PIN=32
+CONFIG_MOTOR03_PIN=19
+CONFIG_MOTOR04_PIN=4
+CONFIG_MOTORS_STARTUP_TEST=n
+
+# Bench safety layer: duty cap, continuous-run cap, serial 's' latch-off.
+CONFIG_KUBIT_MOTOR_BENCH=y
+CONFIG_KUBIT_MOTOR_MAX_PERCENT=30
+CONFIG_KUBIT_MOTOR_MAX_RUN_MS=5000
+CONFIG_KUBIT_MOTOR_SERIAL_STOP=y
+
+# ESPLANE_V1's red LED default (GPIO23) is the IMU interrupt here. Put every
+# status LED on the DevKit's onboard LED (GPIO2, driven only after boot).
+CONFIG_LED_PIN_BLUE=2
+CONFIG_LED_PIN_GREEN=2
+CONFIG_LED_PIN_RED=2
+CONFIG_BUZZER_ON=n
+
+# Phone app / cfclient link over the ESP32 SoftAP.
+CONFIG_TRANSPORT_NATIVE_WIFI=y
+CONFIG_ESPNOW_CONTROL=n
+
+# The available board reports 4 MB flash (E01).
+CONFIG_ESPTOOLPY_FLASHSIZE_2MB=n
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y

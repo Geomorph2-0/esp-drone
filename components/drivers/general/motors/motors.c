@@ -56,6 +56,41 @@ static bool isInit = false;
 static bool isTimerInit = false;
 static bool isHealthy = false;
 
+#ifdef CONFIG_KUBIT_MOTOR_BENCH
+#include "esp_timer.h"
+#ifdef CONFIG_KUBIT_MOTOR_SERIAL_STOP
+#include "driver/uart.h"
+#endif
+/* Kubit bench: latched stop, duty cap and continuous-run cap. */
+#define KUBIT_MAX_RATIO ((uint32_t)UINT16_MAX * CONFIG_KUBIT_MOTOR_MAX_PERCENT / 100U)
+static volatile bool kubitStopLatched = false;
+static int64_t kubitRunStartUs = 0;
+static void motorsForceStopAll(void);
+
+static void kubitLatchStop(const char *reason)
+{
+    if (!kubitStopLatched) {
+        kubitStopLatched = true;
+        motorsForceStopAll();
+        DEBUG_PRINTW("KUBIT MOTORS LATCHED OFF: %s. Reset to clear.", reason);
+    }
+}
+
+#ifdef CONFIG_KUBIT_MOTOR_SERIAL_STOP
+static void kubitSerialStopTask(void *arg)
+{
+    (void)arg;
+    uint8_t key;
+    while (true) {
+        if (uart_read_bytes(UART_NUM_0, &key, 1, portMAX_DELAY) == 1 &&
+            (key == 's' || key == 'S')) {
+            kubitLatchStop("serial stop");
+        }
+    }
+}
+#endif
+#endif
+
 ledc_channel_config_t motors_channel[NBR_OF_MOTORS] = {
     {
         .channel = MOT_PWM_CH1,
@@ -172,6 +207,19 @@ bool motorsInit(const MotorPerifDef **motorMapSelect)
 
     isInit = true;
     isHealthy = true;
+#ifdef CONFIG_KUBIT_MOTOR_BENCH
+    DEBUG_PRINTW("KUBIT motor bench: cap %d%%, max run %d ms, props OFF",
+                 CONFIG_KUBIT_MOTOR_MAX_PERCENT, CONFIG_KUBIT_MOTOR_MAX_RUN_MS);
+#ifdef CONFIG_KUBIT_MOTOR_SERIAL_STOP
+    if (uart_driver_install(UART_NUM_0, 256, 0, 0, NULL, 0) == ESP_OK &&
+        xTaskCreate(kubitSerialStopTask, "kubitStop", 2048, NULL, 6, NULL) == pdPASS) {
+        DEBUG_PRINTW("KUBIT: send 's' on serial to latch all motors off");
+    } else {
+        /* Without the stop path the bench is unsafe: refuse motor output. */
+        kubitLatchStop("serial stop unavailable");
+    }
+#endif
+#endif
     return true;
 }
 
@@ -241,6 +289,16 @@ bool motorsSetRatio(uint32_t id, uint16_t ithrust)
 
     ratio = ithrust;
 
+#ifdef CONFIG_KUBIT_MOTOR_BENCH
+    if (kubitStopLatched) {
+        ratio = 0;
+        ithrust = 0;
+    } else if (ratio > KUBIT_MAX_RATIO) {
+        ratio = (uint16_t)KUBIT_MAX_RATIO;
+        ithrust = ratio;
+    }
+#endif
+
 #ifdef ENABLE_THRUST_BAT_COMPENSATED
 
     if (motorMap[id]->drvType == BRUSHED) {
@@ -272,6 +330,21 @@ bool motorsSetRatio(uint32_t id, uint16_t ithrust)
         return false;
     }
     motor_ratios[id] = ratio;
+#ifdef CONFIG_KUBIT_MOTOR_BENCH
+    {
+        const bool anyRunning = motor_ratios[0] || motor_ratios[1] ||
+                                motor_ratios[2] || motor_ratios[3];
+        const int64_t now = esp_timer_get_time();
+        if (!anyRunning) {
+            kubitRunStartUs = 0;
+        } else if (kubitRunStartUs == 0) {
+            kubitRunStartUs = now;
+        } else if (now - kubitRunStartUs >
+                   (int64_t)CONFIG_KUBIT_MOTOR_MAX_RUN_MS * 1000) {
+            kubitLatchStop("maximum run time");
+        }
+    }
+#endif
 #ifdef DEBUG_EP2
     DEBUG_PRINT_LOCAL("motors ID = %d ,ithrust_10bit = %d", id, (uint32_t)motorsConv16ToBits(ratio));
 #endif
@@ -290,6 +363,11 @@ int motorsGetRatio(uint32_t id)
 void motorsBeep(int id, bool enable, uint16_t frequency, uint16_t ratio)
 {
     uint32_t freq_hz = 15000;
+#ifdef CONFIG_KUBIT_MOTOR_BENCH
+    /* No motor tones or propeller-balance beeps on the bench. */
+    (void)id; (void)enable; (void)frequency; (void)ratio; (void)freq_hz;
+    return;
+#endif
     if (!isInit || !isHealthy || id < 0 || id >= NBR_OF_MOTORS ||
         (enable && frequency == 0)) {
         return;

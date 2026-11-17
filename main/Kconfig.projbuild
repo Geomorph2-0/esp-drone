@@ -402,6 +402,36 @@ menu "ESPDrone Config"
                 Briefly drives each motor during boot. Keep disabled for safe
                 bench testing; enable only when propellers have been removed.
 
+        config KUBIT_MOTOR_BENCH
+            bool "Kubit propeller-free motor bench limits"
+            depends on TARGET_ESPLANE_V1 && IDF_TARGET_ESP32
+            default n
+            help
+                Bench safety layer for Kubit's AO3400 channels. Caps every
+                motor duty, stops all motors after a maximum continuous run,
+                latches off on a serial 's' (UART0), and disables motor beeps.
+                Latched stops clear only on reset. Not a flight configuration.
+
+        config KUBIT_MOTOR_MAX_PERCENT
+            int "Kubit bench: maximum motor duty (percent)"
+            depends on KUBIT_MOTOR_BENCH
+            range 5 100
+            default 30
+
+        config KUBIT_MOTOR_MAX_RUN_MS
+            int "Kubit bench: maximum continuous motor run (ms)"
+            depends on KUBIT_MOTOR_BENCH
+            range 500 60000
+            default 5000
+            help
+                Any motor running longer than this latches all motors off
+                until reset.
+
+        config KUBIT_MOTOR_SERIAL_STOP
+            bool "Kubit bench: 's' on UART0 latches all motors off"
+            depends on KUBIT_MOTOR_BENCH
+            default y
+
         config MOTOR01_PIN
             int "MOTOR01_PIN GPIO number"
             range 0 34 if TARGET_ESPLANE_V1
