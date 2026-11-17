@@ -41,4 +41,13 @@ bool sensorsMpu6050Hmc5883lMs5611ReadMag(Axis3f *mag);
 bool sensorsMpu6050Hmc5883lMs5611ReadBaro(baro_t *baro);
 void sensorsMpu6050Hmc5883lMs5611SetAccMode(accModes accMode);
 
+#ifdef CONFIG_KUBIT_IMU_BENCH
+typedef struct {
+    sensorData_t data;
+    Axis3f rawAccG; // Same acquisition, native axes, before correction/filtering.
+} mpu6050BenchSample_t;
+bool sensorsMpu6050ReadBenchSample(mpu6050BenchSample_t *sample, uint32_t timeoutMs);
+void sensorsMpu6050BenchReadCounts(uint32_t *ok, uint32_t *failed, uint32_t *invalid);
+#endif
+
 #endif // __SENSORS_MPU9250_LPS25H_H__

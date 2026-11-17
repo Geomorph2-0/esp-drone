@@ -25,6 +25,34 @@ menu "ESPDrone Config"
 
     endchoice
 
+    config KUBIT_IMU_BENCH
+        bool "Kubit MPU6050 attitude bench (no motor/controller initialization)"
+        depends on TARGET_PORTABLE_SAFE && IDF_TARGET_ESP32
+        default n
+        help
+            Opt-in sensor calibration and Mahony attitude diagnostic.
+            Uses SDA21, SCL22, INT19 and the MPU6050 native sensor axes.
+            Keep motors and battery disconnected. Board outputs stay disabled.
+
+    config KUBIT_IMU_BENCH_SLOW
+        bool "Kubit bench: 100 kHz I2C and 100 Hz sensor sampling"
+        depends on KUBIT_IMU_BENCH
+        default n
+        help
+            Diagnostic comparison for intermittent I2C failures. Also adjusts
+            low-pass filters and calibration settling time. Not a flight mode.
+
+    config KUBIT_HW123_CANDIDATE
+        bool "Kubit bench: provisional 5 November HW-123 correction"
+        depends on KUBIT_IMU_BENCH
+        default n
+        help
+            Specific to Joseph's measured HW-123, not other MPU6050 modules.
+            Applies per-axis correction in g before alignment/filtering and
+            bypasses startup scalar acceleration normalization. Keeps gyro
+            bias estimation. Transfer from +/-2 g to +/-16 g is unvalidated;
+            use only for sensor bench comparison, not flight acceptance.
+
     choice TRANSPORT
         prompt "CRTP transport"
         default TRANSPORT_NATIVE_WIFI if SOC_WIFI_SUPPORTED

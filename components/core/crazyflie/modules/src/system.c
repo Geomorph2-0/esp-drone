@@ -62,6 +62,7 @@
 #include "sound.h"
 #include "sysload.h"
 #include "estimator_kalman.h"
+#include "imu_bench.h"
 //#include "deck.h"
 //#include "extrx.h"
 #include "app.h"
@@ -200,6 +201,9 @@ void systemTask(void *arg)
   pass &= commanderTest();
   pass &= cfAssertNormalStartTest();
 
+#ifdef CONFIG_KUBIT_IMU_BENCH
+  pass &= imuBenchInit();
+#endif
   if (pass) {
     selftestPassed = 1;
     systemStart();
@@ -333,8 +337,11 @@ void systemSetArmed(bool val)
 
 bool systemIsArmed()
 {
-
+#ifdef CONFIG_KUBIT_IMU_BENCH
+  return false;
+#else
   return armed || forceArm;
+#endif
 }
 // void vApplicationIdleHook( void )
 // {

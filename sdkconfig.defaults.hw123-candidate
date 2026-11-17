@@ -1,0 +1,5 @@
+# Append after sdkconfig.defaults.imu-bench in a fresh, separate build.
+# Same HW-123 only; provisional cross-range comparison, motors disabled.
+CONFIG_KUBIT_HW123_CANDIDATE=y
+# 7 November: user-selected interrupt pin for the soldered HW-123 assembly.
+CONFIG_MPU_PIN_INT=23

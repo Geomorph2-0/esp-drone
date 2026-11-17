@@ -38,6 +38,12 @@
 #include "driver/gpio.h"
 
 #include "sensors_mpu6050_hm5883L_ms5611.h"
+#ifdef CONFIG_KUBIT_IMU_BENCH
+#include "hw123_bench_candidate.h"
+#endif
+#if defined(CONFIG_KUBIT_HW123_CANDIDATE) && !defined(CONFIG_KUBIT_IMU_BENCH)
+#error "HW-123 candidate requires the motor-disabled Kubit IMU bench"
+#endif
 #include "system.h"
 #include "configblock.h"
 #include "param.h"
@@ -82,8 +88,10 @@
 // #define SENSORS_ENABLE_MAG_HM5883L
 // #define SENSORS_ENABLE_PRESSURE_MS5611
 //#define SENSORS_ENABLE_RANGE_VL53L0X
+#ifndef CONFIG_KUBIT_IMU_BENCH
 #define SENSORS_ENABLE_RANGE_VL53L1X
 #define SENSORS_ENABLE_FLOW_PMW3901
+#endif
 
 #define SENSORS_GYRO_FS_CFG MPU6050_GYRO_FS_2000
 #define SENSORS_DEG_PER_LSB_CFG MPU6050_DEG_PER_LSB_2000
@@ -144,6 +152,11 @@ static xSemaphoreHandle dataReady;
 
 static bool isInit = false;
 static sensorData_t sensorData;
+#ifdef CONFIG_KUBIT_IMU_BENCH
+static xQueueHandle benchSamples;
+STATIC_MEM_QUEUE_ALLOC(benchSamples, 1, sizeof(mpu6050BenchSample_t));
+static volatile uint32_t benchReadOk, benchReadFailed, benchReadInvalid;
+#endif
 static volatile uint64_t imuIntTimestamp;
 
 static Axis3i16 gyroRaw;
@@ -154,8 +167,10 @@ static Axis3f gyroBias;
 static Axis3f gyroBiasStdDev;
 #endif
 static bool gyroBiasFound = false;
+#ifndef CONFIG_KUBIT_HW123_CANDIDATE
 static float accScaleSum = 0;
 static float accScale = 1;
+#endif
 
 // Low Pass filtering
 #define GYRO_LPF_CUTOFF_FREQ 80
@@ -202,7 +217,9 @@ static bool processGyroBiasNoBuffer(int16_t gx, int16_t gy, int16_t gz, Axis3f *
 #else
 static bool processGyroBias(int16_t gx, int16_t gy, int16_t gz, Axis3f *gyroBiasOut);
 #endif
+#ifndef CONFIG_KUBIT_HW123_CANDIDATE
 static bool processAccScale(int16_t ax, int16_t ay, int16_t az);
+#endif
 static void sensorsBiasObjInit(BiasObj *bias);
 static void sensorsCalculateVarianceAndMean(BiasObj *bias, Axis3f *varOut, Axis3f *meanOut);
 static void sensorsCalculateBiasMean(BiasObj *bias, Axis3i32 *meanOut);
@@ -258,16 +275,31 @@ static void sensorsTask(void *param)
 
         /* mpu6050 interrupt trigger: data is ready to be read */
         if (pdTRUE == xSemaphoreTake(sensorsDataReady, portMAX_DELAY)) {
-            sensorData.interruptTimestamp = imuIntTimestamp;
+            const uint64_t sampleTimestamp = imuIntTimestamp;
 
             /* sensors step 1-read data from I2C */
             uint8_t dataLen = (uint8_t)(SENSORS_MPU6050_BUFF_LEN +
                                         (isMagnetometerPresent ? SENSORS_MAG_BUFF_LEN : 0) +
                                         (isBarometerPresent ? SENSORS_BARO_BUFF_LEN : 0));
-            i2cdevReadReg8(I2C0_DEV, MPU6050_ADDRESS_AD0_LOW, MPU6050_RA_ACCEL_XOUT_H, dataLen, buffer);
+            if (!i2cdevReadReg8(I2C0_DEV, MPU6050_ADDRESS_AD0_LOW, MPU6050_RA_ACCEL_XOUT_H, dataLen, buffer)) {
+#ifdef CONFIG_KUBIT_IMU_BENCH
+                benchReadFailed++;
+#endif
+                continue; // Do not publish stale data as a successful measurement.
+            }
+#ifdef CONFIG_KUBIT_IMU_BENCH
+            benchReadOk++;
+            if (!hw123BenchMotionPayloadValid(buffer)) {
+                if (benchReadInvalid++ == 0) {
+                    DEBUG_PRINTE("INVALID all-six-channel-zero payload; excluded before calibration/fusion.\n");
+                }
+                continue;
+            }
+#endif
 
             /* sensors step 2-process the respective data */
             processAccGyroMeasurements(&(buffer[0]));
+            sensorData.interruptTimestamp = sampleTimestamp;
 
             if (isMagnetometerPresent) {
                 processMagnetometerMeasurements(&(buffer[SENSORS_MPU6050_BUFF_LEN]));
@@ -290,6 +322,15 @@ static void sensorsTask(void *param)
             }
 
             /* sensors step 4- Unlock stabilizer task */
+#ifdef CONFIG_KUBIT_IMU_BENCH
+            const mpu6050BenchSample_t benchSample = {
+                .data = sensorData,
+                .rawAccG = { .x = accelRaw.x * SENSORS_G_PER_LSB_CFG,
+                             .y = accelRaw.y * SENSORS_G_PER_LSB_CFG,
+                             .z = accelRaw.z * SENSORS_G_PER_LSB_CFG },
+            };
+            xQueueOverwrite(benchSamples, &benchSample);
+#endif
             xSemaphoreGive(dataReady);
 #ifdef DEBUG_EP2
             DEBUG_PRINT_LOCAL("ax = %f,  ay = %f,  az = %f,  gx = %f,  gy = %f,  gz = %f , hx = %f , hy = %f, hz =%f \n", sensorData.acc.x, sensorData.acc.y, sensorData.acc.z, sensorData.gyro.x, sensorData.gyro.y, sensorData.gyro.z, sensorData.mag.x, sensorData.mag.y, sensorData.mag.z);
@@ -343,7 +384,7 @@ void processAccGyroMeasurements(const uint8_t *buffer)
 
     Axis3f accScaled;
 
-#ifdef CONFIG_TARGET_ESPLANE_V1
+#if defined(CONFIG_TARGET_ESPLANE_V1) || defined(CONFIG_KUBIT_IMU_BENCH)
     /* sensors step 2.1 read from buffer */
     accelRaw.x = (((int16_t)buffer[0]) << 8) | buffer[1];
     accelRaw.y = (((int16_t)buffer[2]) << 8) | buffer[3];
@@ -368,13 +409,16 @@ void processAccGyroMeasurements(const uint8_t *buffer)
     gyroBiasFound = processGyroBias(gyroRaw.x, gyroRaw.y, gyroRaw.z, &gyroBias);
 #endif
 
+    /* Candidate already corrects each axis; do not normalize it a second time. */
+#ifndef CONFIG_KUBIT_HW123_CANDIDATE
     /*sensors step 2.3 Calculates the acc scale when platform is steady */
     if (gyroBiasFound) {
         processAccScale(accelRaw.x, accelRaw.y, accelRaw.z);
     }
+#endif
 
     /* sensors step 2.4 convert  digtal value to physical angle */
-#ifdef CONFIG_TARGET_ESPLANE_V1
+#if defined(CONFIG_TARGET_ESPLANE_V1) || defined(CONFIG_KUBIT_IMU_BENCH)
     sensorData.gyro.x = (gyroRaw.x - gyroBias.x) * SENSORS_DEG_PER_LSB_CFG;
 #else
     sensorData.gyro.x = -(gyroRaw.x - gyroBias.x) * SENSORS_DEG_PER_LSB_CFG;
@@ -385,7 +429,12 @@ void processAccGyroMeasurements(const uint8_t *buffer)
     /* sensors step 2.5 low pass filter */
     applyAxis3fLpf((lpf2pData *)(&gyroLpf), &sensorData.gyro);
 
-#ifdef CONFIG_TARGET_ESPLANE_V1
+#ifdef CONFIG_KUBIT_HW123_CANDIDATE
+    accScaled.x = hw123BenchCorrectG(accelRaw.x * SENSORS_G_PER_LSB_CFG, 0);
+    accScaled.y = hw123BenchCorrectG(accelRaw.y * SENSORS_G_PER_LSB_CFG, 1);
+    accScaled.z = hw123BenchCorrectG(accelRaw.z * SENSORS_G_PER_LSB_CFG, 2);
+#else
+#if defined(CONFIG_TARGET_ESPLANE_V1) || defined(CONFIG_KUBIT_IMU_BENCH)
     accScaled.x = (accelRaw.x) * SENSORS_G_PER_LSB_CFG / accScale;
 #else
     accScaled.x = -(accelRaw.x) * SENSORS_G_PER_LSB_CFG / accScale;   
@@ -393,6 +442,7 @@ void processAccGyroMeasurements(const uint8_t *buffer)
 
     accScaled.y = (accelRaw.y) * SENSORS_G_PER_LSB_CFG / accScale;
     accScaled.z = (accelRaw.z) * SENSORS_G_PER_LSB_CFG / accScale;
+#endif
 
     /* sensors step 2.6 Compensate for a miss-aligned accelerometer. */
     sensorsAccAlignToGravity(&accScaled, &sensorData.acc);
@@ -442,10 +492,29 @@ static bool sensorsDeviceInit(void)
     mpu6050SetFullScaleGyroRange(SENSORS_GYRO_FS_CFG);
     // Set accelerometer full scale range
     mpu6050SetFullScaleAccelRange(SENSORS_ACCEL_FS_CFG);
+#ifdef CONFIG_KUBIT_HW123_CANDIDATE
+    uint8_t rangeRegisters[2];
+    if (!i2cdevReadReg8(I2C0_DEV, MPU6050_ADDRESS_AD0_LOW,
+                       MPU6050_RA_GYRO_CONFIG, sizeof(rangeRegisters), rangeRegisters) ||
+        ((rangeRegisters[0] >> 3) & 3) != SENSORS_GYRO_FS_CFG ||
+        ((rangeRegisters[1] >> 3) & 3) != SENSORS_ACCEL_FS_CFG) {
+        DEBUG_PRINTE("HW-123 range readback failed; sensor initialization stopped.\n");
+        return false;
+    }
+    DEBUG_PRINTI("HW-123 range readback: accel +/-16 g, gyro +/-2000 dps.\n");
+#endif
 
     // Set digital low-pass bandwidth for gyro and acc
     // board ESP32_S2_DRONE_V1_2 has more vibrations, bandwidth should be lower
-#ifdef SENSORS_MPU6050_DLPF_256HZ
+#if defined(CONFIG_KUBIT_IMU_BENCH_SLOW)
+    // 1 kHz internal rate / (1 + 9) = 100 Hz; bandwidth below Nyquist.
+    mpu6050SetRate(9);
+    mpu6050SetDLPFMode(MPU6050_DLPF_BW_20);
+    for (uint8_t i = 0; i < 3; i++) {
+        lpf2pInit(&gyroLpf[i], 100, 20);
+        lpf2pInit(&accLpf[i], 100, 20);
+    }
+#elif defined(SENSORS_MPU6050_DLPF_256HZ)
     // 256Hz digital low-pass filter only works with little vibrations
     // Set output rate (15): 8000 / (1 + 7) = 1000Hz
     mpu6050SetRate(7);
@@ -616,12 +685,30 @@ static void sensorsSetupSlaveRead(void)
     DEBUG_PRINTD("sensorsSetupSlaveRead done \n");
 }
 
+#ifdef CONFIG_KUBIT_IMU_BENCH
+bool sensorsMpu6050ReadBenchSample(mpu6050BenchSample_t *sample, uint32_t timeoutMs)
+{
+    return xQueueReceive(benchSamples, sample, M2T(timeoutMs)) == pdTRUE;
+}
+
+void sensorsMpu6050BenchReadCounts(uint32_t *ok, uint32_t *failed, uint32_t *invalid)
+{
+    *ok = benchReadOk;
+    *failed = benchReadFailed;
+    *invalid = benchReadInvalid;
+}
+#endif
+
 static void sensorsTaskInit(void)
 {
   accelerometerDataQueue = STATIC_MEM_QUEUE_CREATE(accelerometerDataQueue);
   gyroDataQueue = STATIC_MEM_QUEUE_CREATE(gyroDataQueue);
   magnetometerDataQueue = STATIC_MEM_QUEUE_CREATE(magnetometerDataQueue);
   barometerDataQueue = STATIC_MEM_QUEUE_CREATE(barometerDataQueue);
+
+#ifdef CONFIG_KUBIT_IMU_BENCH
+  benchSamples = STATIC_MEM_QUEUE_CREATE(benchSamples);
+#endif
 
   STATIC_MEM_TASK_CREATE(sensorsTask, sensorsTask, SENSORS_TASK_NAME, NULL, SENSORS_TASK_PRI);
   DEBUG_PRINTD("xTaskCreate sensorsTask \n");
@@ -699,8 +786,13 @@ bool sensorsMpu6050Hmc5883lMs5611Test(void)
         return false;
     }
 
-    // Try for 3 seconds so the quad has stabilized enough to pass the test
-    for (int i = 0; i < 300; i++) {
+    // Each MPU self-test includes a one-second wait; bound bench startup retries.
+#ifdef CONFIG_KUBIT_IMU_BENCH
+    const int attempts = 3;
+#else
+    const int attempts = 300;
+#endif
+    for (int i = 0; i < attempts; i++) {
         if (mpu6050SelfTest() == true) {
             isMpu6050TestPassed = true;
             break;
@@ -740,6 +832,7 @@ bool sensorsMpu6050Hmc5883lMs5611Test(void)
  * Calculates accelerometer scale out of SENSORS_ACC_SCALE_SAMPLES samples. Should be called when
  * platform is stable.
  */
+#ifndef CONFIG_KUBIT_HW123_CANDIDATE
 static bool processAccScale(int16_t ax, int16_t ay, int16_t az)
 {
     static bool accBiasFound = false;
@@ -757,6 +850,7 @@ static bool processAccScale(int16_t ax, int16_t ay, int16_t az)
 
     return accBiasFound;
 }
+#endif
 
 #ifdef GYRO_BIAS_LIGHT_WEIGHT
 /**
@@ -814,8 +908,10 @@ static bool processGyroBias(int16_t gx, int16_t gy, int16_t gz, Axis3f *gyroBias
 
         if (gyroBiasRunning.isBiasValueFound) {
             //TODO:
+#ifndef CONFIG_KUBIT_IMU_BENCH
             soundSetEffect(SND_CALIB);
             ledseqRun(&seq_calibrated);
+#endif
             DEBUG_PRINTI("isBiasValueFound!");
         }
     }
@@ -1006,6 +1102,11 @@ static void sensorsAccAlignToGravity(Axis3f *in, Axis3f *out)
  */
 void sensorsMpu6050Hmc5883lMs5611SetAccMode(accModes accMode)
 {
+#ifdef CONFIG_KUBIT_IMU_BENCH_SLOW
+    // Keep this diagnostic's matched rate/filter configuration fixed.
+    (void)accMode;
+    return;
+#endif
     switch (accMode)
     {
     case ACC_MODE_PROPTEST:
@@ -1061,6 +1162,8 @@ PARAM_GROUP_STOP(imu_sensors)
 PARAM_GROUP_START(imu_tests)
 PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, mpu6050, &isMpu6050TestPassed)
 PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, HMC5883L, &isMagnetometerPresent)
+#ifdef SENSORS_ENABLE_FLOW_PMW3901
 PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, pmw3901, &isPmw3901Present)
+#endif
 PARAM_ADD(PARAM_UINT8 | PARAM_RONLY, MS5611, &isBarometerPresent) // TODO: Rename MS5611 to LPS25H. Client needs to be updated at the same time.
 PARAM_GROUP_STOP(imu_tests)

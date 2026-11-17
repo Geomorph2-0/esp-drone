@@ -38,7 +38,11 @@
 #include "debug_cf.h"
 
 // Definitions of sensors I2C bus
+#ifdef CONFIG_KUBIT_IMU_BENCH_SLOW
+#define I2C_DEFAULT_SENSORS_CLOCK_SPEED             100000
+#else
 #define I2C_DEFAULT_SENSORS_CLOCK_SPEED             400000
+#endif
 
 // Definition of eeprom and deck I2C buss,use two i2c with 400Khz clock simultaneously could trigger the watchdog
 #define I2C_DEFAULT_DECK_CLOCK_SPEED                100000
