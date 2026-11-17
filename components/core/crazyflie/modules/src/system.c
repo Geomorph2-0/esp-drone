@@ -248,7 +248,10 @@ void systemTask(void *arg)
   pass &= estimatorKalmanTaskTest();
   DEBUG_PRINTI("estimatorKalmanTaskTest = %d ", pass);
   //pass &= deckTest();
+#ifdef CONFIG_BUZZER_ON
   pass &= soundTest();
+#endif /* Kubit: no buzzer fitted; soundTest() is false when BUZZER_ON=n, which
+        * failed the self-test and left systemStart() uncalled (MEM task never ran). */
   DEBUG_PRINTI("soundTest = %d ", pass);
   pass &= memTest();
   DEBUG_PRINTI("memTest = %d ", pass);
