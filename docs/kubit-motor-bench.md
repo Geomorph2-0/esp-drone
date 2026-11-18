@@ -1,7 +1,7 @@
 # Kubit four-motor bench profile (ESP-Drone)
 
-Status, 14 November 2026 (Africa/Lagos): **flashed and booted (user-reported, motor supply off).** No motor has run. **Propellers stay OFF.** This profile is
-not a flight configuration.
+Status, 18 November 2026 (Africa/Lagos): **flashed and run props-off (user-reported).** On 14 Nov it was flashed and booted with the motor supply off (E37). On 16 Nov all four motors ran from scripts, and the serial stop, setpoint watchdog and 5 s run cap were each observed once (E40–E43). No capture file is saved, and current, temperature, phone-app control and propeller load are untested. **Propellers stay OFF.** This profile is not a flight configuration.
+(Earlier, 14 November: "No motor has run.")
 
 ## What it is
 
@@ -74,6 +74,14 @@ the single point every motor command passes through.
 Hardware status (user-reported, props off): serial `s` latches off on this image; the setpoint watchdog zeroed the motors about 2.06 s after the last setpoint (E41); the 5 s run cap latched off a 7 s run (E42, hand-timed 5.5-6.5 s). Props stay off. Before relying on any of them, check
 each one with the motor supply current-limited and the props off.
 
+## Sound self-test fix (14 Nov)
+
+With `BUZZER_ON=n` the startup sound self-test failed, so `systemStart()` never ran and the
+first cfclient connection caused a reboot loop (port-4 queue full assert, E37). `system.c`
+now runs `soundTest()` only when `CONFIG_BUZZER_ON` is set (`system.c` around lines 251–254;
+commit `2c4fed2`). The image dated 14 Nov 13:44 includes this fix. The user then flashed it and
+reports cfclient connects and shows values; this was not captured.
+
 ## Build
 
 ```bash
@@ -89,11 +97,42 @@ Defaults seed a fresh configuration only. Verify `CONFIG_TARGET_ESPLANE_V1`,
 `sdkconfig.kubit-motor-bench`.
 
 13 Nov result (pins revised 14 Nov to 13/32/19/4, USB forward): build passed, with
-17 % of the app partition free. The existing
+17 % of the app partition free. A build from a fresh `--recurse-submodules` clone at commit
+`2c4fed2` also passed on 17 Nov (see `GIT_HISTORY_RECOVERY.md` in the repository root). The existing
 `build/` and `build-hw123-candidate/` profiles also rebuilt, and
 `tests/test_hw123_pipeline.py` passed. That is a software result only.
 
+
+## Four-channel wiring (as intended, not inspected)
+
+Source: the one-channel circuit in
+[ONE_MOTOR_TEST_WIRING.html](../../docs/hardware/ONE_MOTOR_TEST_WIRING.html) and
+[MOTOR_CHANNEL_BRINGUP](../../docs/hardware/MOTOR_CHANNEL_BRINGUP_2026-11-07.md), repeated per
+channel. **This is the intended design, not a record of what is soldered.** No photo,
+continuity or resistance inspection of the four channels is recorded after the 14 Nov
+repair (E38, E39); there is no schematic yet (tracker T15).
+
+Per channel (M1 GPIO13, M2 GPIO32, M3 GPIO19, M4 GPIO4), AO3400 N-channel MOSFET:
+
+| Net | Intended connection | Confirmed? |
+| --- | --- | --- |
+| Gate drive | ESP32 GPIO → 150 Ω → AO3400 gate | **No.** 0 Ω gate-to-GPIO was read on all four channels on 14 Nov (E38); no later reading recorded |
+| Gate pull-down | 10 kΩ gate → source (ground) | Reported for the GPIO25 channel only (E32) |
+| Load | Motor between +BAT and AO3400 drain | Motors respond (E39–E43, user-reported) |
+| Flyback diode | Across the motor, cathode to +BAT, anode to drain | **Partly.** M3 diode was reversed and corrected (E38/E39); M1, M2, M4 orientation not recorded |
+| Source | AO3400 source to the common ground | Not recorded |
+| Supply decoupling | 100 nF and 330 µF/10 V across the motor supply (per the one-channel sheet) | Not recorded for four channels |
+
+Shared nets:
+
+- Battery: bare 1S Li-ion cell on the bench (E38). The BETAFPV 550 mAh battery is selected but not used here. Fuse (about 1–1.5 A) and switch in the positive lead: **required by `bench-tests/esp32-four-motor/README.md`, not confirmed fitted.** The only record is the `--fuse-fitted` flag the user passed to the link-timeout script (E41).
+- ESP32 power: USB only on the bench (3V3 powers the HW-123); motor supply separate. A common ground between the motor supply and the ESP32 is intended (the AO3400 sources and gate pull-downs need it) but not recorded as inspected.
+- HW-123: 3V3, GND, SDA GPIO21, SCL GPIO22, INT GPIO23 (E16, E23).
+- Battery-voltage ADC GPIO35: no divider fitted.
+
 ## Suggested first hardware session (ask before flashing)
+
+Progress on 16 Nov (props off, user-reported): step 2 (flash) was done by the user (E37) and step 3 was partly done (cfclient connected, user-reported; the phone app was not tested). Step 1's diode and current-limited supply are not confirmed: the fuse is unrecorded and the M3 diode was reversed (E38). The three stops in step 4 were each observed once on the ESP-Drone image (E40–E42). The phone-app link (T32/T33) and the 2 s link timeout via a closed phone app are untested. Steps 4 and 5 below remain the reference method; the reset off-state (T21) is still open for all four pins.
 
 1. Fit the flyback diode and use a current-limited supply. Keep the props off
    and the motor supply **off while flashing**.

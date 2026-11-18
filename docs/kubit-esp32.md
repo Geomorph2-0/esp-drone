@@ -10,8 +10,10 @@ historically using INT19 with motor/controller initialization disabled. The
 Current next task: [candidate attitude/range bench](kubit-hw123-integration.md)
 for user-assisted tilt/return: INT23 and static slow/fast behavior are now verified
 ([hardware report](../../docs/hardware/HW123_INT23_ATTITUDE_2026-11-07.md)); [standalone recheck results](../../docs/hardware/HW123_VALIDATION_2026-11-07.md) are saved.
-See the [master tracker](../../docs/planning/PROJECT_TRACKER.md) for status; flight
-configuration and motor integration remain pending.
+See the [master tracker](../../docs/planning/PROJECT_TRACKER.md) for status. **Update, 18 Nov:** the board has since
+been flashed with the [motor-bench profile](kubit-motor-bench.md) (4 MB flash, motors on
+GPIO13/32/19/4, ESPLANE_V1 path); the portable diagnostic configuration described below is
+the 31 Oct–7 Nov baseline and is no longer the installed image. Flight configuration remains pending.
 
 ## Current configuration
 
@@ -27,7 +29,7 @@ the shared defaults.
 | Position-hold and assisted command conversion | Disabled |
 | Startup motor spin and buzzer | Disabled |
 | External PSRAM | Disabled |
-| Flash | DIO, 40 MHz, conservative 2 MB configuration |
+| Flash | DIO, 40 MHz, conservative 2 MB configuration (the motor-bench profile uses 4 MB; the board reports 4 MB) |
 | Partition layout | Single factory application, 1 MiB app partition |
 | Console | UART0, 115200 baud, through the USB-to-UART bridge |
 
@@ -68,7 +70,8 @@ control remains disabled; Wi-Fi testing is separate from this no-radio bench.
 Use the upstream **ESPlane V1 / classic ESP32** profile as the reference for
 the next hardware configuration. Its MPU-6050 defaults are SDA GPIO21, SCL
 GPIO22 and interrupt GPIO19; its motor outputs are GPIO4, GPIO33, GPIO32 and
-GPIO25. These are reference-board assignments only. Confirm the DevKit's pinout,
+GPIO25. These are reference-board assignments only. Kubit's own assignments (motors
+GPIO13/32/19/4, INT23) are in [kubit-motor-bench.md](kubit-motor-bench.md). Confirm the DevKit's pinout,
 boot constraints and actual circuit before using them. Changing hardware
 profiles also requires reviewing every saved GPIO setting in `menuconfig`.
 

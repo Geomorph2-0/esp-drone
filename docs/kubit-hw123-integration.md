@@ -127,7 +127,9 @@ Joseph selected GPIO23 for soldering convenience. The candidate defaults and
 saved candidate configuration now use INT23; source guards accept 19 or 23 and
 startup/timeout messages report the configured pin. The legacy bench remains
 INT19. GPIO23 is unused in TARGET_PORTABLE_SAFE; the ESP-Lane V1 red-LED
-assignment belongs to an inactive profile. SDA21/SCL22 remain unchanged.
+assignment belongs to an inactive profile. (Update, 13–14 Nov: the
+[motor-bench profile](kubit-motor-bench.md) uses the ESPLANE_V1 path and moves the LEDs to
+GPIO2 so that INT23 stays free.) SDA21/SCL22 remain unchanged.
 Build verification does not confirm the physical solder joint or interrupt delivery.
 
 **7 November runtime update:** Joseph reported soldering INT23 and authorized
