@@ -1,5 +1,7 @@
 # Kubit four-motor bench profile (ESP-Drone)
 
+**Status, 23 November 2026 (user-reported, E45/E46):** the later `kubit-phone-bench` image (section below) was flashed and run by the user; serial, Wi-Fi/phone and motor control reportedly work. Diode orientation and reset off-state are reported done; the fuse and 150 Ω gate-resistor checks were discarded by the user (not passed). Statements below dated 18 Nov or earlier that call these open, or phone control untested, are superseded.
+
 Status, 18 November 2026 (Africa/Lagos): **flashed and run props-off (user-reported).** On 14 Nov it was flashed and booted with the motor supply off (E37). On 16 Nov all four motors ran from scripts, and the serial stop, setpoint watchdog and 5 s run cap were each observed once (E40–E43). No capture file is saved, and current, temperature, phone-app control and propeller load are untested. **Propellers stay OFF.** This profile is not a flight configuration.
 (Earlier, 14 November: "No motor has run.")
 
@@ -151,21 +153,23 @@ Per channel (M1 GPIO13, M2 GPIO32, M3 GPIO19, M4 GPIO4), AO3400 N-channel MOSFET
 
 | Net | Intended connection | Confirmed? |
 | --- | --- | --- |
-| Gate drive | ESP32 GPIO → 150 Ω → AO3400 gate | **No.** 0 Ω gate-to-GPIO was read on all four channels on 14 Nov (E38); no later reading recorded |
+| Gate drive | ESP32 GPIO → 150 Ω → AO3400 gate | **Discarded by user 23 Nov (E46), not passed.** Earlier: **No.** 0 Ω gate-to-GPIO was read on all four channels on 14 Nov (E38); no later reading recorded |
 | Gate pull-down | 10 kΩ gate → source (ground) | Reported for the GPIO25 channel only (E32) |
 | Load | Motor between +BAT and AO3400 drain | Motors respond (E39–E43, user-reported) |
-| Flyback diode | Across the motor, cathode to +BAT, anode to drain | **Partly.** M3 diode was reversed and corrected (E38/E39); M1, M2, M4 orientation not recorded |
+| Flyback diode | Across the motor, cathode to +BAT, anode to drain | **Reported done by user 23 Nov (E46)**, inferred from all four motors working; no per-channel inspection. Earlier: partly (M3 diode reversed and corrected, E38/E39) |
 | Source | AO3400 source to the common ground | Not recorded |
 | Supply decoupling | 100 nF and 330 µF/10 V across the motor supply (per the one-channel sheet) | Not recorded for four channels |
 
 Shared nets:
 
-- Battery: bare 1S Li-ion cell on the bench (E38). The BETAFPV 550 mAh battery is selected but not used here. Fuse (about 1–1.5 A) and switch in the positive lead: **required by `bench-tests/esp32-four-motor/README.md`, not confirmed fitted.** The only record is the `--fuse-fitted` flag the user passed to the link-timeout script (E41).
+- Battery: bare 1S Li-ion cell on the bench (E38). The BETAFPV 550 mAh battery is selected but not used here. Fuse (about 1–1.5 A) and switch in the positive lead: **check discarded by the user 23 Nov (E46); not passed, never confirmed fitted.** Earlier: required by `bench-tests/esp32-four-motor/README.md`. The only record is the `--fuse-fitted` flag the user passed to the link-timeout script (E41).
 - ESP32 power: USB only on the bench (3V3 powers the HW-123); motor supply separate. A common ground between the motor supply and the ESP32 is intended (the AO3400 sources and gate pull-downs need it) but not recorded as inspected.
 - HW-123: 3V3, GND, SDA GPIO21, SCL GPIO22, INT GPIO23 (E16, E23).
 - Battery-voltage ADC GPIO35: no divider fitted.
 
 ## Suggested first hardware session (ask before flashing)
+
+(Earlier plan, 16 Nov. As of 23 Nov the phone link and phone-driven motors are reported working on the phone-bench image, E45; the fuse/resistor items in step 1 were discarded by the user, E46.)
 
 Progress on 16 Nov (props off, user-reported): step 2 (flash) was done by the user (E37) and step 3 was partly done (cfclient connected, user-reported; the phone app was not tested). Step 1's diode and current-limited supply are not confirmed: the fuse is unrecorded and the M3 diode was reversed (E38). The three stops in step 4 were each observed once on the ESP-Drone image (E40–E42). The phone-app link (T32/T33) and the 2 s link timeout via a closed phone app are untested. Steps 4 and 5 below remain the reference method; the reset off-state (T21) is still open for all four pins.
 
