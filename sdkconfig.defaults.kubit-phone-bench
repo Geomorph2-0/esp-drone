@@ -1,0 +1,4 @@
+# Kubit phone bench (propellers OFF): serial console + phone thrust to all four motors.
+# Append AFTER sdkconfig.defaults.kubit-motor-bench in a new build directory.
+# See docs/kubit-motor-bench.md. Not a flight configuration.
+CONFIG_KUBIT_PHONE_BENCH=y

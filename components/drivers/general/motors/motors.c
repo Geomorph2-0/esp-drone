@@ -62,30 +62,126 @@ static bool isHealthy = false;
 #include "driver/uart.h"
 #endif
 /* Kubit bench: latched stop, duty cap and continuous-run cap. */
-#define KUBIT_MAX_RATIO ((uint32_t)UINT16_MAX * CONFIG_KUBIT_MOTOR_MAX_PERCENT / 100U)
+#define KUBIT_RATIO_FOR(pct) ((uint32_t)UINT16_MAX * (uint32_t)(pct) / 100U)
+/* Runtime duty cap. Boots (and returns on disarm) at CONFIG_KUBIT_MOTOR_MAX_PERCENT. */
+static volatile uint8_t kubitCapPercent = CONFIG_KUBIT_MOTOR_MAX_PERCENT;
+#define KUBIT_MAX_RATIO KUBIT_RATIO_FOR(kubitCapPercent)
 static volatile bool kubitStopLatched = false;
+static volatile bool kubitLatchIsRunCap = false;
 static int64_t kubitRunStartUs = 0;
 static void motorsForceStopAll(void);
 
-static void kubitLatchStop(const char *reason)
+static void kubitLatchStopEx(const char *reason, bool runCap)
 {
+    if (!runCap) {
+        kubitLatchIsRunCap = false; /* a hard stop upgrades a run-cap latch */
+    }
     if (!kubitStopLatched) {
+        kubitLatchIsRunCap = runCap;
         kubitStopLatched = true;
         motorsForceStopAll();
-        DEBUG_PRINTW("KUBIT MOTORS LATCHED OFF: %s. Reset to clear.", reason);
+        DEBUG_PRINTW("KUBIT MOTORS LATCHED OFF: %s. %s", reason,
+                     runCap ? "Serial 'a' clears the run-cap latch." : "Reset to clear.");
     }
 }
+
+static void kubitLatchStop(const char *reason)
+{
+    kubitLatchStopEx(reason, false);
+}
+
+#ifdef CONFIG_KUBIT_PHONE_BENCH
+static bool (*kubitConsoleHandler)(const char *line) = NULL;
+
+void kubitMotorsSetConsoleHandler(bool (*handler)(const char *line))
+{
+    kubitConsoleHandler = handler;
+}
+
+/* Clears only a run-cap latch. A serial-stop latch needs a reset. */
+bool kubitMotorsClearRunCapLatch(void)
+{
+    if (kubitStopLatched && kubitLatchIsRunCap) {
+        kubitRunStartUs = 0;
+        kubitStopLatched = false;
+        kubitLatchIsRunCap = false;
+        return true;
+    }
+    return !kubitStopLatched;
+}
+
+#ifndef CONFIG_KUBIT_MOTOR_CAP_CEILING_PERCENT
+#define CONFIG_KUBIT_MOTOR_CAP_CEILING_PERCENT CONFIG_KUBIT_MOTOR_MAX_PERCENT
+#endif
+
+/* Set the runtime duty cap: 5..ceiling percent. Returns false if out of range. */
+bool kubitMotorsSetCapPercent(int pct)
+{
+    if (pct < 5 || pct > CONFIG_KUBIT_MOTOR_CAP_CEILING_PERCENT) {
+        return false;
+    }
+    kubitCapPercent = (uint8_t)pct;
+    return true;
+}
+
+int kubitMotorsGetCapPercent(void)
+{
+    return kubitCapPercent;
+}
+
+void kubitMotorsResetCap(void)
+{
+    kubitCapPercent = CONFIG_KUBIT_MOTOR_MAX_PERCENT;
+}
+
+bool kubitMotorsStopLatched(void)
+{
+    return kubitStopLatched;
+}
+
+bool kubitMotorsLatchIsRunCap(void)
+{
+    return kubitLatchIsRunCap;
+}
+#endif
 
 #ifdef CONFIG_KUBIT_MOTOR_SERIAL_STOP
 static void kubitSerialStopTask(void *arg)
 {
     (void)arg;
     uint8_t key;
+#ifdef CONFIG_KUBIT_PHONE_BENCH
+    char line[32];
+    size_t len = 0;
+#endif
     while (true) {
-        if (uart_read_bytes(UART_NUM_0, &key, 1, portMAX_DELAY) == 1 &&
-            (key == 's' || key == 'S')) {
-            kubitLatchStop("serial stop");
+        if (uart_read_bytes(UART_NUM_0, &key, 1, portMAX_DELAY) != 1) {
+            continue;
         }
+        /* 's' stops immediately, even in the middle of a typed line. No console
+         * command may contain the letter 's'. */
+        if (key == 's' || key == 'S') {
+            kubitLatchStop("serial stop");
+#ifdef CONFIG_KUBIT_PHONE_BENCH
+            len = 0;
+#endif
+            continue;
+        }
+#ifdef CONFIG_KUBIT_PHONE_BENCH
+        if (key == '\r' || key == '\n') {
+            if (len > 0 && kubitConsoleHandler != NULL) {
+                line[len] = '\0';
+                if (!kubitConsoleHandler(line)) {
+                    DEBUG_PRINTW("KUBIT console: unknown command '%s'. ? for help", line);
+                }
+            }
+            len = 0;
+        } else if (len < sizeof(line) - 1) {
+            line[len++] = (char)key;
+        } else {
+            len = 0; /* overlong line: discard */
+        }
+#endif
     }
 }
 #endif
@@ -341,7 +437,7 @@ bool motorsSetRatio(uint32_t id, uint16_t ithrust)
             kubitRunStartUs = now;
         } else if (now - kubitRunStartUs >
                    (int64_t)CONFIG_KUBIT_MOTOR_MAX_RUN_MS * 1000) {
-            kubitLatchStop("maximum run time");
+            kubitLatchStopEx("maximum run time", true);
         }
     }
 #endif

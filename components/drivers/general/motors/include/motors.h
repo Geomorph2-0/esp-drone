@@ -178,6 +178,17 @@ bool motorsTest(void);
  */
 bool motorsSetRatio(uint32_t id, uint16_t ratio);
 
+#ifdef CONFIG_KUBIT_PHONE_BENCH
+/* Kubit phone bench: serial console hooks. Handler returns true if it handled the line. */
+void kubitMotorsSetConsoleHandler(bool (*handler)(const char *line));
+bool kubitMotorsClearRunCapLatch(void);
+bool kubitMotorsSetCapPercent(int pct);
+int kubitMotorsGetCapPercent(void);
+void kubitMotorsResetCap(void);
+bool kubitMotorsStopLatched(void);
+bool kubitMotorsLatchIsRunCap(void);
+#endif
+
 /**
  * Get the PWM ratio of the motor 'id'. Return -1 if wrong ID.
  */

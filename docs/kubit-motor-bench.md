@@ -74,6 +74,41 @@ the single point every motor command passes through.
 Hardware status (user-reported, props off): serial `s` latches off on this image; the setpoint watchdog zeroed the motors about 2.06 s after the last setpoint (E41); the 5 s run cap latched off a 7 s run (E42, hand-timed 5.5-6.5 s). Props stay off. Before relying on any of them, check
 each one with the motor supply current-limited and the props off.
 
+## Phone bench image (22 Nov 2026): serial console and phone control
+
+Status: built, flashed and run by the user on 22 Nov (user-reported: serial commands, Wi-Fi/phone control and motor control worked; E45). No capture is saved; propeller state, current, temperature and any flight result are unrecorded. **Props stay OFF.** Not a flight configuration.
+
+**Why the phone could not drive motors before:** the Kubit image boots disarmed (`system.c`), ESP-Drone only calls power distribution when armed, and the phone apps never send an arm command. Phone thrust was dropped in `stabilizer.c`.
+
+`CONFIG_KUBIT_PHONE_BENCH` (depends on the motor bench) adds:
+
+- A UART0 console, 115200 baud, line-based:
+
+| Command | Effect |
+| --- | --- |
+| `a` | Arm; also clears a run-cap latch (never a serial-stop latch) |
+| `d` | Disarm, motors 0, duty cap back to default |
+| `m <1-4> <0-65535>` | Set one motor (still clamped by the cap) |
+| `all <0-65535>` | Set all four motors |
+| `c <percent>` | Set the duty cap, 5 up to `KUBIT_MOTOR_CAP_CEILING_PERCENT` (default 50) |
+| `?` | Print state |
+| `s` | Latch all motors off at once (reset to clear); works mid-line |
+
+- Phone thrust sent equally to all four motors once armed (no roll/pitch/yaw mixing).
+- Unchanged: 30 % default cap (resets on boot and on `d`), 5 s run cap, ~2 s link-loss stop, no motor beeps. Re-arming with `a` never restarts old serial values.
+
+Build (new directory; never run `set-target` on an existing one):
+
+```bash
+esp_idf55
+cd /home/rbj/Documents/Projects/microDrone/esp-drone
+idf.py -B build-kubit-phone-bench -D SDKCONFIG=sdkconfig.kubit-phone-bench \
+  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.esp32;sdkconfig.defaults.kubit-motor-bench;sdkconfig.defaults.kubit-phone-bench' \
+  build
+```
+
+Checks before commit: motor-bench profile rebuilt and `tests/test_hw123_pipeline.py` passed (user-run, 23 Nov).
+
 ## Sound self-test fix (14 Nov)
 
 With `BUZZER_ON=n` the startup sound self-test failed, so `systemStart()` never ran and the

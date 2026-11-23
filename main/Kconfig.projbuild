@@ -432,6 +432,26 @@ menu "ESPDrone Config"
             depends on KUBIT_MOTOR_BENCH
             default y
 
+        config KUBIT_PHONE_BENCH
+            bool "Kubit bench: serial console and phone thrust to all four motors"
+            depends on KUBIT_MOTOR_BENCH && KUBIT_MOTOR_SERIAL_STOP
+            default n
+            help
+                Adds a UART0 console (a, d, m <1-4> <v>, all <v>, ?) and sends the
+                phone app's thrust equally to all four motors (no attitude mixing)
+                once armed by the serial 'a' command. 's' still latches off.
+                Propellers OFF. Not a flight configuration.
+
+        config KUBIT_MOTOR_CAP_CEILING_PERCENT
+            int "Kubit phone bench: highest duty cap the serial 'c' command may set (percent)"
+            depends on KUBIT_PHONE_BENCH
+            range 5 100
+            default 50
+            help
+                The console command 'c <percent>' can raise the duty cap at runtime
+                only up to this build-time ceiling. The cap returns to
+                KUBIT_MOTOR_MAX_PERCENT on boot and on 'd'. Props OFF.
+
         config MOTOR01_PIN
             int "MOTOR01_PIN GPIO number"
             range 0 34 if TARGET_ESPLANE_V1
